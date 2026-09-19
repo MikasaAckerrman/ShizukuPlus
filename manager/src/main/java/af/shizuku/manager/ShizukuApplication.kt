@@ -563,6 +563,8 @@ class ShizukuApplication : Application(), Configuration.Provider {
             Timber.plant(Timber.DebugTree())
         }
 
+        af.shizuku.manager.adb.AdbKey.appContext = this
+
         // Prewarm root check on a background thread early to avoid main thread delays/ANRs
         af.shizuku.manager.utils.EnvironmentUtils.prewarmAsync()
 

@@ -43,6 +43,9 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
 
     companion object {
 
+        @Volatile
+        var appContext: android.content.Context? = null
+
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val ENCRYPTION_KEY_ALIAS = "_adbkey_encryption_key_"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
@@ -183,6 +186,24 @@ class AdbKey(private val adbKeyStore: AdbKeyStore, name: String) {
 
         val aad = ByteArray(16)
         "adbkey".toByteArray().copyInto(aad)
+
+        // [vivo-patch] Prefer the bundled pre-authorized key (assets/adbkey.der).
+        // Its public key is already present in this device's /data/misc/adb/adb_keys,
+        // so adb connections succeed silently — unattended autostart without the
+        // USB-debugging authorization dialog.
+        try {
+            appContext?.assets?.open("adbkey.der")?.use { input ->
+                val bytes = input.readBytes()
+                if (bytes.size > 100) {
+                    privateKey = KeyFactory.getInstance("RSA")
+                            .generatePrivate(PKCS8EncodedKeySpec(bytes)) as RSAPrivateKey
+                    runCatching { adbKeyStore.put(encrypt(bytes, aad) ?: bytes) }
+                    Timber.tag(TAG).d("Using bundled pre-authorized ADB key")
+                }
+            }
+        } catch (e: Exception) {
+            Timber.tag(TAG).w("Bundled ADB key not available: %s", e.message)
+        }
 
         var ciphertext = adbKeyStore.get()
         if (ciphertext != null) {
