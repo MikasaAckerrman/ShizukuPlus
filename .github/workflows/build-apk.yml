@@ -26,12 +26,23 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Create signing.properties (stable in-repo keystore)
+      - name: Inject secrets (signing keystore + pre-authorized adb key)
+        env:
+          KS_B64: ${{ secrets.MINIS_KEYSTORE_B64 }}
+          KS_PW: ${{ secrets.MINIS_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.MINIS_KEYSTORE_ALIAS }}
+          ADBKEY_B64: ${{ secrets.MINIS_ADBKEY_DER_B64 }}
         run: |
-          echo "KEYSTORE_FILE=$PWD/shizuku-release.p12" > signing.properties
-          echo "KEYSTORE_PASSWORD=android" >> signing.properties
-          echo "KEYSTORE_ALIAS=shizukuplus" >> signing.properties
-          echo "KEYSTORE_ALIAS_PASSWORD=android" >> signing.properties
+          echo "$KS_B64" | base64 -d > shizukuplus-release.p12
+          mkdir -p manager/src/main/assets
+          echo "$ADBKEY_B64" | base64 -d > manager/src/main/assets/adbkey.der
+          {
+            echo "KEYSTORE_FILE=$PWD/shizukuplus-release.p12"
+            echo "KEYSTORE_PASSWORD=$KS_PW"
+            echo "KEYSTORE_ALIAS=$KS_ALIAS"
+            echo "KEYSTORE_ALIAS_PASSWORD=$KS_PW"
+          } > signing.properties
+          ls -la shizukuplus-release.p12 manager/src/main/assets/adbkey.der
 
       - name: Build debug APK
         run: |
