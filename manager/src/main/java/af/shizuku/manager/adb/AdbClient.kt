@@ -85,7 +85,19 @@ class AdbClient(
                 tlsOutputStream = DataOutputStream(ts.outputStream)
                 useTls = true
 
+                // [fix] After switching to TLS the client must re-send A_CNXN:
+                // modern adbd (Android 13+) waits for the client's CNXN over TLS
+                // before replying, so reading first deadlocks until the timeout.
+                write(A_CNXN, A_VERSION, A_MAXDATA, "host::")
                 message = read()
+                if (message.command == A_AUTH) {
+                    write(A_AUTH, ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
+                    message = read()
+                    if (message.command != A_CNXN) {
+                        write(A_AUTH, ADB_AUTH_RSAPUBLICKEY, 0, key.adbPublicKey)
+                        message = read()
+                    }
+                }
             } else if (message.command == A_AUTH) {
                 if (message.command != A_AUTH && message.arg0 != ADB_AUTH_TOKEN) error("not A_AUTH ADB_AUTH_TOKEN")
                 write(A_AUTH, ADB_AUTH_SIGNATURE, 0, key.sign(message.data))
