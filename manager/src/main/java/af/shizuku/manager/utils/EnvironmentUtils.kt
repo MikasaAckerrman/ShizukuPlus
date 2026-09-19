@@ -143,6 +143,15 @@ object EnvironmentUtils {
     }
 
     /**
+     * The port of the adbd TLS (Wireless Debugging) server. vivo's adbd reads
+     * persist.adb.tls_server.enable at startup and publishes the randomly
+     * chosen port here, so it can be resolved without mDNS/Wi-Fi.
+     */
+    fun getAdbTlsPort(): Int {
+        return SystemProperties.getInt("service.adb.tls.port", -1)
+    }
+
+    /**
      * Resolves a SAF directory URI to a physical file path for a given filename.
      */
     @JvmStatic

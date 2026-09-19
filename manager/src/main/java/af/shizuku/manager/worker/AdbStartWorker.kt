@@ -80,6 +80,45 @@ class AdbStartWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 }
             }
 
+            // [vivo] Local adbd port discovery — no Wireless Debugging toggle, no mDNS,
+            // no Wi-Fi required. On OEM builds where adbd listens on a random TLS port
+            // right after boot (persist.adb.tls_server.enable=1), the port is published
+            // in the "service.adb.tls.port" system property. Read it and, as a fallback,
+            // parse listening ports from /proc/net/tcp{,6} (readable by apps), then
+            // connect over loopback.
+            run {
+                val candidates = ArrayList<Int>()
+                val tlsPort = EnvironmentUtils.getAdbTlsPort()
+                if (tlsPort in 1..65535) candidates.add(tlsPort)
+                for (procFile in listOf("/proc/net/tcp", "/proc/net/tcp6")) {
+                    try {
+                        java.io.File(procFile).forEachLine { line ->
+                            val parts = line.trim().split(Regex("\\s+"))
+                            if (parts.size >= 4 && parts[3] == "0A") {
+                                val hex = parts[1].substringAfterLast(':')
+                                val p = hex.toIntOrNull(16)
+                                if (p != null && p in 30000..60999) candidates.add(p)
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                for (p in candidates.distinct()) {
+                    if (!AdbPortProber.isPortOpen(p, 200)) continue
+                    try {
+                        AdbStarter.startAdb(applicationContext, p)
+                        Starter.waitForBinder()
+                        ActivityLogManager.log("Shizuku", applicationContext.packageName,
+                            "Service started via local adbd port $p (no Wi-Fi, no mDNS)")
+                        val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        nm.cancel(ShizukuReceiverStarter.NOTIFICATION_ID)
+                        return Result.success()
+                    } catch (_: Exception) {
+                        // Not adbd, or authorization not granted yet — try next candidate.
+                    }
+                }
+            }
+
             val tcpPort = EnvironmentUtils.getAdbTcpPort()
             if (tcpPort > 0 && !ShizukuSettings.getTcpMode()) {
                 AdbStarter.stopTcp(applicationContext, tcpPort)
